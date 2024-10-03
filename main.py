@@ -1,49 +1,78 @@
-import nengo
-import nengo_loihi
-
+import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import HTML
 from matplotlib.animation import ArtistAnimation
 
+
+import nengo
+import nengo_loihi
+
+# All NengoLoihi models should call this before model construction
 nengo_loihi.set_defaults()
 
 rng = np.random.RandomState(0)
 
-right_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\right\events.h5'
-left_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\left\events.h5'
+gain = 101
 
-dvs_height = 480
-dvs_width = 640
+t_length = 1
 
-# the length of time to generate data for, in seconds and in microseconds
-t_length = 1.0
-t_length_us = int(1e6 * t_length)
+events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\dvs-from-file-events.events'
 
-dvs_events = nengo_loihi.dvs.DVSEvents.from_file(left_camera)
+if __name__ == '__main__':
 
-dt_frame_us = 20e3
-t_frames = dt_frame_us * np.arange(int(round(t_length_us / dt_frame_us)))
+    with nengo.Network() as net:
+        dvs_process = nengo_loihi.dvs.DVSFileChipProcess(
+            file_path=events_file_name, channels_last=True,dvs_height = 480,dvs_width = 640,
+        )
 
-fig = plt.figure()
-imgs = []
-for t_frame in t_frames:
-    t0_us = t_frame
-    t1_us = t_frame + dt_frame_us
-    t = dvs_events.events[:]["t"]
-    m = (t >= t0_us) & (t < t1_us)
-    events_m = dvs_events.events[m]
+        u = nengo.Node(dvs_process)
 
-    # show "off" (0) events as -1 and "on" (1) events as +1
-    events_sign = 2.0 * events_m["p"] - 1
+        ensembles = [
+            nengo.Ensemble(
+               dvs_process.height * dvs_process.width,
+                1,
+                neuron_type=nengo.SpikingRectifiedLinear(),
+                gain=nengo.dists.Choice([gain]),
+                bias=nengo.dists.Choice([0]),
+            )
+            for _ in range(dvs_process.polarity)
+        ]
 
-    frame_img = np.zeros((dvs_height, dvs_width))
-    frame_img[events_m["y"], events_m["x"]] = events_sign
+        print(f"Number of ensembles {len(ensembles)}")
 
-    img = plt.imshow(frame_img, vmin=-1, vmax=1, animated=True)
-    imgs.append([img])
+        for k, e in enumerate(ensembles):
+            u_channel = u[k :: dvs_process.polarity]
+            nengo.Connection(u_channel, e.neurons, transform=1.0)
 
-del dvs_events
+        probes = [nengo.Probe(e.neurons) for e in ensembles]
 
-ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
-HTML(ani.to_html5_video())
+    print("Running sim")
+    with nengo_loihi.Simulator(net) as sim:
+        sim.run(t_length)
+
+    sim_t = sim.trange()
+    shape = (len(sim_t), dvs_process.height, dvs_process.width)
+    output_spikes_neg = sim.data[probes[0]].reshape(shape) * sim.dt
+    output_spikes_pos = sim.data[probes[1]].reshape(shape) * sim.dt
+
+    dt_frame = 0.01
+    t_frames = dt_frame * np.arange(int(round(t_length / dt_frame)))
+
+    fig = plt.figure()
+    imgs = []
+    for t_frame in t_frames:
+        t0 = t_frame
+        t1 = t_frame + dt_frame
+        m = (sim_t >= t0) & (sim_t < t1)
+
+        frame_img = np.zeros((dvs_process.height, dvs_process.width))
+        frame_img -= output_spikes_neg[m].sum(axis=0)
+        frame_img += output_spikes_pos[m].sum(axis=0)
+        #frame_img = frame_img / np.abs(frame_img).max()
+
+        img = plt.imshow(frame_img, vmin=-1, vmax=1, animated=True)
+        imgs.append([img])
+
+    ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
+    ani.save(r"C:\Users\USER\PycharmProjects\nengox\data\model_out.mp4", writer='ffmpeg')  # Or use 'imagemagick' for .gif
