@@ -37,7 +37,7 @@ if __name__ == '__main__':
     left_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\left\events.h5'
 
 
-    event_filepath = Path(r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\right\events.h5')
+    event_filepath = Path(right_camera)
     video_filepath = Path(r'C:\Users\USER\Downloads\MyPHDWork\output_video_r.mp4')
 
     with tb.open_file(str(event_filepath), mode='r') as file:
@@ -60,6 +60,8 @@ if __name__ == '__main__':
     height = 480
     width = 640
 
+    event_count = 0
+
     writer = skvideo.io.FFmpegWriter(str(video_filepath))  # Convert Path to str
     for events in tqdm(EventReader(event_filepath, dtMilli)):
         p = events['p']
@@ -68,4 +70,6 @@ if __name__ == '__main__':
         t = events['t']
         img = render(x, y, p, height, width)
         writer.writeFrame(img)
+        event_count+=len(x)
     writer.close()
+    print(f"-I- converted total of {event_count} events")

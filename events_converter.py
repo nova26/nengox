@@ -6,6 +6,8 @@ import numpy as np
 import skvideo.io
 from tqdm import tqdm
 import pandas as pd
+
+from utils.eventslicer import EventSlicer
 from visualization.eventreader import EventReader
 
 import h5py
@@ -34,20 +36,20 @@ def convert():
             print(f"Key: {key}, Dataset: {h5f[key]}")
 
 
-    dtMilli = 1000
-    height = 480
-    width = 640
-
     events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\dvs-from-file-events.events'
     eventsList = []
 
-    for events in tqdm(EventReader(event_filepath, dtMilli)):
-        p = events['p']
-        x = events['x']
-        y = events['y']
-        t = events['t']
-        eventsList.append((t, p, x, y))
+    h5f = h5py.File(str(event_filepath), 'r')
+    event_slicer = EventSlicer(h5f)
 
+    e = event_slicer.get_events(event_slicer.get_start_time_us(),event_slicer.get_start_time_us() + 100000)
+
+    p = e['p']
+    x = e['x']
+    y = e['y']
+    t = e['t']
+    t = t - t[0]
+    eventsList.append((t, p, x, y))
 
     dvs_events = nengo_loihi.dvs.DVSEvents()
     nbEvents = sum(len(xx) for _, _, xx, _ in eventsList)
@@ -68,11 +70,7 @@ def convert():
 
 def display():
     import matplotlib.pyplot as plt
-    from IPython.display import HTML
     from matplotlib.animation import ArtistAnimation
-
-    t_length = 1.0
-    t_length_us = int(1e6 * t_length)
 
     dvs_height = 480
     dvs_width = 640
@@ -80,19 +78,25 @@ def display():
     events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\dvs-from-file-events.events'
     dvs_events = nengo_loihi.dvs.DVSEvents.from_file(events_file_name)
 
+    t = dvs_events.events[:]["t"]
+    t_length_us = t[-1] - t[0]
+
     dt_frame_us = 20e3
     t_frames = dt_frame_us * np.arange(int(round(t_length_us / dt_frame_us)))
 
     fig = plt.figure()
     imgs = []
+
+    event_count = 0
     for t_frame in t_frames:
         t0_us = t_frame
         t1_us = t_frame + dt_frame_us
-        t = dvs_events.events[:]["t"]
+
         m = (t >= t0_us) & (t < t1_us)
         events_m = dvs_events.events[m]
 
-        # show "off" (0) events as -1 and "on" (1) events as +1
+        event_count+=np.sum(m)
+
         events_sign = 2.0 * events_m["p"] - 1
 
         frame_img = np.zeros((dvs_height, dvs_width))
@@ -102,9 +106,15 @@ def display():
         imgs.append([img])
 
     del dvs_events
+    print(f"-I- converted total of {event_count} events and {len(imgs)} images")
 
     ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
-    HTML(ani.to_html5_video())
+
+    # Save the animation to a file (e.g., as a video)
+    ani.save(r"C:\Users\USER\PycharmProjects\nengox\data\dvs_events_animation.mp4", writer='ffmpeg')  # Or use 'imagemagick' for .gif
+
+    print("Animation saved as dvs_events_animation.mp4")
 
 if __name__ == '__main__':
+    convert()
     display()
