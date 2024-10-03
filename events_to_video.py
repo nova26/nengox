@@ -8,34 +8,39 @@ import pandas as pd
 from visualization.eventreader import EventReader
 
 import h5py
+
+
 def render(x: np.ndarray, y: np.ndarray, pol: np.ndarray, H: int, W: int) -> np.ndarray:
     assert x.size == y.size == pol.size
     assert H > 0
     assert W > 0
-    img = np.full((H,W,3), fill_value=255,dtype='uint8')
-    mask = np.zeros((H,W),dtype='int32')
+    img = np.full((H, W, 3), fill_value=255, dtype='uint8')
+    mask = np.zeros((H, W), dtype='int32')
     pol = pol.astype('int')
-    pol[pol==0]=-1
-    mask1 = (x>=0)&(y>=0)&(W>x)&(H>y)
-    mask[y[mask1],x[mask1]]=pol[mask1]
-    img[mask==0]=[255,255,255]
+    pol[pol == 0] = -1
+    mask1 = (x >= 0) & (y >= 0) & (W > x) & (H > y)
+    mask[y[mask1], x[mask1]] = pol[mask1]
 
-#    img[mask==-1]=[255,0,0]
-    img[mask==-1]=[0,0,255]
+    img[mask == 0] = [0, 0, 0]
 
-    img[mask==1]=[0,0,255]
+    #img[mask==-1]=[255,0,0]
+    img[mask == -1] = [0, 0, 255]
+
+    img[mask == 1] = [0, 0, 255]
     return img
+
 
 if __name__ == '__main__':
     import tables as tb
 
-    event_filepath = Path(r'C:\Users\USER\Downloads\train_events\zurich_city_00_a\events\left\events.h5')
-    video_filepath = Path(r'C:\Users\USER\Downloads\output_video.mp4')  # Ensure a valid extension like .mp4
-    dt = 10
-    height = 480
-    width = 640
+    right_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\right\events.h5'
+    left_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\left\events.h5'
 
-    with tb.open_file(event_filepath, mode='r') as file:
+
+    event_filepath = Path(r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\right\events.h5')
+    video_filepath = Path(r'C:\Users\USER\Downloads\MyPHDWork\output_video_r.mp4')
+
+    with tb.open_file(str(event_filepath), mode='r') as file:
         # Access the events group and datasets
         p_data = file.root.events.p[:100]  # Adjust for chunking
         t_data = file.root.events.t[:100]
@@ -51,8 +56,12 @@ if __name__ == '__main__':
 
     assert video_filepath.parent.is_dir(), "Directory {} does not exist".format(str(video_filepath.parent))
 
+    dtMilli = 33
+    height = 480
+    width = 640
+
     writer = skvideo.io.FFmpegWriter(str(video_filepath))  # Convert Path to str
-    for events in tqdm(EventReader(event_filepath, dt)):
+    for events in tqdm(EventReader(event_filepath, dtMilli)):
         p = events['p']
         x = events['x']
         y = events['y']
