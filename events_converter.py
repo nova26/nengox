@@ -36,14 +36,12 @@ def convert():
             print(f"Key: {key}, Dataset: {h5f[key]}")
 
 
-    events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\dvs-from-file-events.events'
-    eventsList = []
-
     h5f = h5py.File(str(event_filepath), 'r')
     event_slicer = EventSlicer(h5f)
 
-    e = event_slicer.get_events(event_slicer.get_start_time_us(),event_slicer.get_start_time_us() + 100000)
+    e = event_slicer.get_events(event_slicer.get_start_time_us(),event_slicer.get_final_time_us())
 
+    eventsList = []
     p = e['p']
     x = e['x']
     y = e['y']
@@ -64,6 +62,7 @@ def convert():
         ee["y"] = yy
         i += len(xx)
 
+    events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\dvs-from-file-events.events'
     dvs_events.write_file(events_file_name)
     print("Wrote %r" % events_file_name)
 
