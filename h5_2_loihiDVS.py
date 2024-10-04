@@ -3,6 +3,7 @@ import nengo_loihi
 import numpy as np
 
 import pandas as pd
+from tqdm import tqdm
 
 from utils.eventslicer import EventSlicer
 
@@ -15,62 +16,61 @@ def convert():
     right_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\right\events.h5'
     left_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\left\events.h5'
 
-    event_filepath = Path(right_camera)
 
-    with tb.open_file(str(event_filepath), mode='r') as file:
-        # Access the events group and datasets
-        p_data = file.root.events.p[:100]  # Adjust for chunking
-        t_data = file.root.events.t[:100]
-        x_data = file.root.events.x[:100]
-        y_data = file.root.events.y[:100]
+    files = [right_camera,left_camera]
 
-        df = pd.DataFrame({'p': p_data, 't': t_data, 'x': x_data, 'y': y_data})
-        print(df)
+    for f in files:
 
-    with h5py.File(event_filepath, 'r') as h5f:
-        for key in h5f.keys():
-            print(f"Key: {key}, Dataset: {h5f[key]}")
+        event_filepath = Path(f)
+
+        with tb.open_file(str(event_filepath), mode='r') as file:
+            p_data = file.root.events.p[:100]  # Adjust for chunking
+            df = pd.DataFrame({'p': p_data})
+            print(df)
 
 
-    h5f = h5py.File(str(event_filepath), 'r')
-    event_slicer = EventSlicer(h5f)
+        h5f = h5py.File(str(event_filepath), 'r')
+        event_slicer = EventSlicer(h5f)
 
-    e = event_slicer.get_events(event_slicer.get_start_time_us(),event_slicer.get_final_time_us())
+        e = event_slicer.get_events(event_slicer.get_start_time_us(),event_slicer.get_final_time_us())
 
-    eventsList = []
-    p = e['p']
-    x = e['x']
-    y = e['y']
-    t = e['t']
-    t = t - t[0]
-    eventsList.append((t, p, x, y))
+        eventsList = []
+        p = e['p']
+        x = e['x']
+        y = e['y']
+        t = e['t']
+        t = t - t[0]
+        eventsList.append((t, p, x, y))
 
-    dvs_events = nengo_loihi.dvs.DVSEvents()
-    nbEvents = sum(len(xx) for _, _, xx, _ in eventsList)
-    dvs_events.init_events(n_events=nbEvents)
+        dvs_events = nengo_loihi.dvs.DVSEvents()
+        nbEvents = sum(len(xx) for _, _, xx, _ in eventsList)
+        dvs_events.init_events(n_events=nbEvents)
 
-    i = 0
-    for tt, p, xx, yy in eventsList:
-        ee = dvs_events.events[i: i + len(xx)]
-        ee["t"] = tt
-        ee["p"] = p
-        ee["x"] = xx
-        ee["y"] = yy
-        i += len(xx)
+        i = 0
+        for tt, p, xx, yy in tqdm(eventsList):
+            ee = dvs_events.events[i: i + len(xx)]
+            ee["t"] = tt
+            ee["p"] = p
+            ee["x"] = xx
+            ee["y"] = yy
+            i += len(xx)
 
-    events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\dvs-from-file-events.events'
-    dvs_events.write_file(events_file_name)
-    print("Wrote %r" % events_file_name)
+        side = f.split("\\")[-2]
+        name =f.split("\\")[-4]
+
+        events_file_name = rf'C:\Users\USER\PycharmProjects\nengox\data\{name}_{side}.events'
+        dvs_events.write_file(events_file_name)
+        print("Wrote %r" % events_file_name)
 
 
-def display():
+def create_vid():
     import matplotlib.pyplot as plt
     from matplotlib.animation import ArtistAnimation
 
     dvs_height = 480
     dvs_width = 640
 
-    events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\dvs-from-file-events.events'
+    events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\thun_00_a_left.events'
     dvs_events = nengo_loihi.dvs.DVSEvents.from_file(events_file_name)
 
     t = dvs_events.events[:]["t"]
@@ -83,7 +83,7 @@ def display():
     imgs = []
 
     event_count = 0
-    for t_frame in t_frames:
+    for t_frame in tqdm(t_frames):
         t0_us = t_frame
         t1_us = t_frame + dt_frame_us
 
@@ -105,11 +105,11 @@ def display():
 
     ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
 
-    # Save the animation to a file (e.g., as a video)
-    ani.save(r"C:\Users\USER\PycharmProjects\nengox\data\dvs_events_animation.mp4", writer='ffmpeg')  # Or use 'imagemagick' for .gif
+    nv = events_file_name.split("\\")[-1].split(".")[0]
+    ani.save(fr"C:\Users\USER\PycharmProjects\nengox\data\{nv}.mp4", writer='ffmpeg')  # Or use 'imagemagick' for .gif
 
     print("Animation saved as dvs_events_animation.mp4")
 
 if __name__ == '__main__':
-    convert()
-    display()
+    # convert()
+    create_vid()
