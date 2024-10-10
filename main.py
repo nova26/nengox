@@ -12,7 +12,7 @@ rng = np.random.RandomState(0)
 
 t_length = 5
 
-events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\synthetic_events_synthetic.events'
+events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\syntactic_left.events'
 
 if __name__ == '__main__':
 
