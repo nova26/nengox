@@ -241,6 +241,9 @@ def create_vid(events_file_name, dvs_height, dvs_width):
     print(f"Animation saved as {output_file}")
 
 if __name__ == '__main__':
+
+    #convert()
+
     events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\syntactic_left.events'
     create_syntactic_data(events_file_name,0)
     create_vid(events_file_name,20,50)
@@ -251,4 +254,4 @@ if __name__ == '__main__':
     create_vid(events_file_name,20,50)
 
 
-    #convert()
+
