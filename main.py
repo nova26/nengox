@@ -12,7 +12,7 @@ rng = np.random.RandomState(0)
 
 t_length = 5
 
-events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\dvs-from-file-events.events'
+events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\synthetic_events_synthetic.events'
 
 if __name__ == '__main__':
 
@@ -22,13 +22,12 @@ if __name__ == '__main__':
 
         print("Creating DVS object")
         dvs_process = nengo_loihi.dvs.DVSFileChipProcess(
-            file_path=events_file_name, channels_last=True, dvs_height=480, dvs_width=640,
+            file_path=events_file_name, channels_last=True, dvs_height=20, dvs_width=50,
         )
 
         u = nengo.Node(dvs_process)
 
         print("Creating ensembles")
-
 
         positive_ensemble = nengo.Ensemble(
             dvs_process.height * dvs_process.width,
@@ -63,10 +62,8 @@ if __name__ == '__main__':
     output_spikes_neg = sim.data[probes[0]].reshape(shape) * sim.dt
     output_spikes_pos = sim.data[probes[1]].reshape(shape) * sim.dt
 
-
     dt_frame = 0.01
     t_frames = dt_frame * np.arange(int(round(t_length / dt_frame)))
-
 
     fig = plt.figure()
     imgs = []
