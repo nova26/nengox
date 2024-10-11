@@ -30,8 +30,6 @@ class EventSlicer:
         # ms_to_idx:
         #       0       2       2       3       3       3       5       5       8       9
 
-        dset = self.h5f['ms_to_idx']
-        print(dset[:1])
         self.ms_to_idx = np.asarray(self.h5f['ms_to_idx'], dtype='int64')
         z = 1
 
