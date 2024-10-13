@@ -1,3 +1,4 @@
 .idea
 data/*
-data
+data/model_out_input.mp4
+data/dvs-from-file-events.events

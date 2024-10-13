@@ -1,168 +1,147 @@
 import os
-
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import ArtistAnimation
 from nengo_extras.vision import Gabor
 import nengo
 import nengo_loihi
+from dvs_utils import create_input_ensembles, create_filter_ensembles, gabor_transform, gaussian_transform_matrix, \
+    visualize_and_save
 
-# All NengoLoihi models should call this before model construction
 nengo_loihi.set_defaults()
-
 rng = np.random.RandomState(0)
 
-t_length = 20
-
-events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\syntactic_left.events'
-
-
-def gabor_transform(height, width, gabor_bank):
-    # Create a transformation matrix that applies the Gabor filter to each neuron's input
-    transform = np.zeros((height * width, height * width))
-
-    filter_size = gabor_bank.shape[1]  # Assuming square Gabor filters
-    half_filter = filter_size // 2
-
-    for i in range(height):
-        for j in range(width):
-            neuron_idx = i * width + j  # Index of the neuron corresponding to pixel (i, j)
-
-            # Apply Gabor filter centered on this neuron
-            for di in range(-half_filter, half_filter + 1):
-                for dj in range(-half_filter, half_filter + 1):
-                    ni = i + di
-                    nj = j + dj
-                    if 0 <= ni < height and 0 <= nj < width:
-                        pixel_idx = ni * width + nj  # Index of neighboring pixel
-                        filter_val = gabor_bank[0, di + half_filter, dj + half_filter]
-                        transform[neuron_idx, pixel_idx] = filter_val
-
-    return transform
+t_length = 2
+dt_frame = 0.01
+left_events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\thun_00_a_left.events'
+right_events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\thun_00_a_right.events'
 
 
 if __name__ == '__main__':
-
     model = nengo.Network(label="NEF summary")
 
     with model:
-
         print("Creating DVS object")
-        dvs_process = nengo_loihi.dvs.DVSFileChipProcess(
-            file_path=events_file_name, channels_last=True, dvs_height=20, dvs_width=50,
+        left_dvs_process = nengo_loihi.dvs.DVSFileChipProcess(
+            file_path=left_events_file_name, channels_last=True, dvs_height=240, dvs_width=320,
         )
+        u_left = nengo.Node(left_dvs_process)
 
-        u = nengo.Node(dvs_process)
+        print("Creating input ensembles to DVS")
+        left_positive_ensemble, left_negative_ensemble = create_input_ensembles(left_dvs_process.height * left_dvs_process.width)
+        print("Creating filter ensembles")
+        left_positive_gabor_ensemble, left_positive_gaussian_ensemble = create_filter_ensembles(left_dvs_process.height * left_dvs_process.width)
+        left_negative_gabor_ensemble,left_negative_gaussian_ensemble = create_filter_ensembles(left_dvs_process.height * left_dvs_process.width)
 
-        print("Creating ensembles")
+        print("Connecting input ensembles to DVS")
+        nengo.Connection(u_left[1:: left_dvs_process.polarity], left_positive_ensemble.neurons, transform=1.0)
+        nengo.Connection(u_left[0:: left_dvs_process.polarity], left_negative_ensemble.neurons, transform=1.0)
 
-        positive_ensemble = nengo.Ensemble(
-            dvs_process.height * dvs_process.width,
-            1,
-            neuron_type=nengo.SpikingRectifiedLinear(),
-            gain=nengo.dists.Choice([101]),
-            bias=nengo.dists.Choice([0]),
+        print("Connecting Gabor filter to input ensembles")
+        left_gabor_bank = Gabor().generate(1, (11, 11), rng)  # Single Gabor filter for convolution
+        left_gabor_transform_matrix = gabor_transform(left_dvs_process.height, left_dvs_process.width, left_gabor_bank)
+        nengo.Connection(left_positive_ensemble.neurons, left_positive_gabor_ensemble.neurons, transform=left_gabor_transform_matrix)
+        nengo.Connection(left_negative_ensemble.neurons, left_negative_gabor_ensemble.neurons, transform=left_gabor_transform_matrix)
+
+        print("Connecting Gaussian filter to input ensembles")
+        left_gaussian_transform_matrix_values = gaussian_transform_matrix(left_dvs_process.height, left_dvs_process.width, sigma=1.0)
+        nengo.Connection(left_positive_ensemble.neurons, left_positive_gaussian_ensemble.neurons,
+                         transform=left_gaussian_transform_matrix_values)
+        nengo.Connection(left_negative_ensemble.neurons, left_negative_gaussian_ensemble.neurons,
+                         transform=left_gaussian_transform_matrix_values)
+
+        left_probes = [nengo.Probe(left_negative_ensemble.neurons),
+                  nengo.Probe(left_positive_ensemble.neurons),
+                  nengo.Probe(left_positive_gabor_ensemble.neurons),
+                  nengo.Probe(left_positive_gaussian_ensemble.neurons),
+                  nengo.Probe(left_negative_gabor_ensemble.neurons),
+                  nengo.Probe(left_negative_gaussian_ensemble.neurons)
+                  ]
+        ######################################################
+
+        right_dvs_process = nengo_loihi.dvs.DVSFileChipProcess(
+            file_path=right_events_file_name, channels_last=True, dvs_height=240, dvs_width=320,
         )
+        u_right = nengo.Node(right_dvs_process)
 
-        negative_ensemble = nengo.Ensemble(
-            dvs_process.height * dvs_process.width,
-            1,
-            neuron_type=nengo.SpikingRectifiedLinear(),
-            gain=nengo.dists.Choice([101]),
-            bias=nengo.dists.Choice([0]),
-        )
+        print("Creating input ensembles to DVS")
+        right_positive_ensemble, right_negative_ensemble = create_input_ensembles(
+            right_dvs_process.height * right_dvs_process.width)
+        print("Creating filter ensembles")
+        right_positive_gabor_ensemble, right_positive_gaussian_ensemble = create_filter_ensembles(
+            right_dvs_process.height * right_dvs_process.width)
+        right_negative_gabor_ensemble, right_negative_gaussian_ensemble = create_filter_ensembles(
+            right_dvs_process.height * right_dvs_process.width)
 
-        print("Connection ensembles to DVS")
+        print("Connecting input ensembles to DVS")
+        nengo.Connection(u_right[1:: right_dvs_process.polarity], right_positive_ensemble.neurons, transform=1.0)
+        nengo.Connection(u_right[0:: right_dvs_process.polarity], right_negative_ensemble.neurons, transform=1.0)
 
-        nengo.Connection(u[1:: dvs_process.polarity], positive_ensemble.neurons, transform=1.0)
-        nengo.Connection(u[0:: dvs_process.polarity], negative_ensemble.neurons, transform=1.0)
+        print("Connecting Gabor filter to input ensembles")
+        right_gabor_bank = Gabor().generate(1, (11, 11), rng)  # Single Gabor filter for convolution
+        right_gabor_transform_matrix = gabor_transform(right_dvs_process.height, right_dvs_process.width,
+                                                       right_gabor_bank)
+        nengo.Connection(right_positive_ensemble.neurons, right_positive_gabor_ensemble.neurons,
+                         transform=left_gabor_transform_matrix)
+        nengo.Connection(right_negative_ensemble.neurons, right_negative_gabor_ensemble.neurons,
+                         transform=left_gabor_transform_matrix)
 
-        gabor_bank = Gabor().generate(1, (11, 11), rng)  # Single Gabor filter for convolution
+        print("Connecting Gaussian filter to input ensembles")
+        right_gaussian_transform_matrix_values = gaussian_transform_matrix(right_dvs_process.height,
+                                                                           right_dvs_process.width,
+                                                                           sigma=1.0)
+        nengo.Connection(right_positive_ensemble.neurons, right_positive_gaussian_ensemble.neurons,
+                         transform=right_gaussian_transform_matrix_values)
+        nengo.Connection(right_negative_ensemble.neurons, right_negative_gaussian_ensemble.neurons,
+                         transform=right_gaussian_transform_matrix_values)
 
-        # Create a new ensemble to represent the output after Gabor filtering
-        gabor_ensemble = nengo.Ensemble(
-            dvs_process.height * dvs_process.width,  # One neuron per pixel
-            1,  # Dimensionality is 1 (one output per neuron)
-            neuron_type=nengo.RectifiedLinear(),
-        )
-
-        gabor_transform_matrix = gabor_transform(dvs_process.height, dvs_process.width, gabor_bank)
-        nengo.Connection(positive_ensemble.neurons, gabor_ensemble.neurons, transform=gabor_transform_matrix)
-
-        probes = [nengo.Probe(negative_ensemble.neurons), nengo.Probe(positive_ensemble.neurons),nengo.Probe(gabor_ensemble.neurons)]
+        right_probes = [nengo.Probe(right_negative_ensemble.neurons),
+                        nengo.Probe(right_positive_ensemble.neurons),
+                        nengo.Probe(right_positive_gabor_ensemble.neurons),
+                        nengo.Probe(right_positive_gaussian_ensemble.neurons),
+                        nengo.Probe(right_negative_gabor_ensemble.neurons),
+                        nengo.Probe(right_negative_gaussian_ensemble.neurons)
+                        ]
 
     print("Running simulation")
     with nengo.Simulator(model, progress_bar=True) as sim:
         sim.run(t_length)
 
     sim_t = sim.trange()
-    shape = (len(sim_t), dvs_process.height, dvs_process.width)
-    output_spikes_neg = sim.data[probes[0]].reshape(shape) * sim.dt
-    output_spikes_pos = sim.data[probes[1]].reshape(shape) * sim.dt
+    shape = (len(sim_t), left_dvs_process.height, left_dvs_process.width)
+    left_output_spikes_neg = sim.data[left_probes[0]].reshape(shape) * sim.dt
+    left_output_spikes_pos = sim.data[left_probes[1]].reshape(shape) * sim.dt
+    left_gabor_filtered_output = sim.data[left_probes[2]].reshape(shape) * sim.dt
+    left_gaussian_filtered_output = sim.data[left_probes[3]].reshape(shape) * sim.dt
 
-    dt_frame = 0.01
     t_frames = dt_frame * np.arange(int(round(t_length / dt_frame)))
 
-    fig = plt.figure()
-    imgs = []
-    frame_count = 0
-    for t_frame in t_frames:
-        frame_count+=1
-        t0 = t_frame
-        t1 = t_frame + dt_frame
-        m = (sim_t >= t0) & (sim_t < t1)
+    # Visualize and save input ensemble output
+    visualize_and_save(left_output_spikes_pos - left_output_spikes_neg, shape, sim_t, t_frames,
+                       os.path.join(r'C:\Users\USER\PycharmProjects\nengox\data\model_out', 'left_model_out_input.mp4'))
 
-        frame_img = np.zeros((dvs_process.height, dvs_process.width))
-        frame_img -= output_spikes_neg[m].sum(axis=0)
-        frame_img += output_spikes_pos[m].sum(axis=0)
+    # Visualize and save Gabor-filtered output
+    visualize_and_save(left_gabor_filtered_output, shape, sim_t, t_frames,
+                       os.path.join(r'C:\Users\USER\PycharmProjects\nengox\data\model_out', 'left_gabor_filtered_model_out.mp4'))
 
-        if np.abs(frame_img).max() != 0 :
-            frame_img = frame_img / np.abs(frame_img).max()
+    # Visualize and save Gaussian-filtered output
+    visualize_and_save(left_gaussian_filtered_output, shape, sim_t, t_frames,
+                       os.path.join(r'C:\Users\USER\PycharmProjects\nengox\data\model_out', 'left_gaussian_filtered_model_out.mp4'))
 
-        img = plt.imshow(frame_img, vmin=-1, vmax=1, animated=True)
-        imgs.append([img])
+    ###################################################
+    right_output_spikes_neg = sim.data[right_probes[0]].reshape(shape) * sim.dt
+    right_output_spikes_pos = sim.data[right_probes[1]].reshape(shape) * sim.dt
+    right_gabor_filtered_output = sim.data[right_probes[2]].reshape(shape) * sim.dt
+    right_gaussian_filtered_output = sim.data[right_probes[3]].reshape(shape) * sim.dt
 
-    ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
+    t_frames = dt_frame * np.arange(int(round(t_length / dt_frame)))
 
-    output_file = os.path.join(r'C:\Users\USER\PycharmProjects\nengox\data', 'model_out_input.mp4')
-    ani.save(output_file, writer='ffmpeg')
+    # Visualize and save input ensemble output
+    visualize_and_save(right_output_spikes_pos - right_output_spikes_neg, shape, sim_t, t_frames,
+                       os.path.join(r'C:\Users\USER\PycharmProjects\nengox\data\model_out', 'right_model_out_input.mp4'))
 
-    print(f"Total frames {frame_count} for input")
+    # Visualize and save Gabor-filtered output
+    visualize_and_save(right_gabor_filtered_output, shape, sim_t, t_frames,
+                       os.path.join(r'C:\Users\USER\PycharmProjects\nengox\data\model_out', 'right_gabor_filtered_model_out.mp4'))
 
-    gabor_filtered_output = sim.data[probes[2]]
-    gabor_filtered_output = gabor_filtered_output.reshape(shape) * sim.dt
-
-
-    fig = plt.figure()
-    imgs = []
-    frame_count = 0
-
-    for t_frame in t_frames:
-        frame_count += 1
-        t0 = t_frame
-        t1 = t_frame + dt_frame
-        m = (sim_t >= t0) & (sim_t < t1)
-
-        # Sum the Gabor-filtered output over the current time frame
-        frame_img = np.zeros((dvs_process.height, dvs_process.width))
-        frame_img += gabor_filtered_output[m].sum(axis=0)
-
-        # Normalize the image for visualization
-        if np.abs(frame_img).max() != 0:
-            frame_img = frame_img / np.abs(frame_img).max()
-
-        # Visualize the Gabor-filtered output as an image
-        img = plt.imshow(frame_img, vmin=-1, vmax=1, animated=True)
-        imgs.append([img])
-
-    # Create animation (no individual frame saving)
-    ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
-
-    # Save the MP4 output directly
-    output_file = os.path.join(r'C:\Users\USER\PycharmProjects\nengox\data', 'gabor_filtered_model_out.mp4')
-    ani.save(output_file, writer='ffmpeg')
-
-    print(f"Total frames {frame_count} for gabor")
-
-
-
+    # Visualize and save Gaussian-filtered output
+    visualize_and_save(right_gaussian_filtered_output, shape, sim_t, t_frames,
+                       os.path.join(r'C:\Users\USER\PycharmProjects\nengox\data\model_out', 'right_gaussian_filtered_model_out.mp4'))

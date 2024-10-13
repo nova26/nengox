@@ -1,98 +1,125 @@
-from pathlib import Path
-import nengo_loihi
+
 import numpy as np
-
-import pandas as pd
-from tqdm import tqdm
-
 from utils.eventslicer import EventSlicer
 
-import h5py
 
 
-def plot_hist():
-    import tables as tb
-    import tables as tb
-    import pandas as pd
-    import h5py
-    from pathlib import Path
+def create_vid(events_file_name, dvs_height, dvs_width):
     import matplotlib.pyplot as plt
+    from matplotlib.animation import ArtistAnimation
+    import numpy as np
+    from tqdm import tqdm
+    import nengo_loihi
 
-    right_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\right\events.h5'
-    left_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\left\events.h5'
+    # Load the events from the specified file
+    dvs_events = nengo_loihi.dvs.DVSEvents.from_file(events_file_name)
 
+    # Extract event timestamps
+    t = dvs_events.events[:]["t"]
+    t_length_us = t[-1] - t[0]
 
-    files = [right_camera,left_camera]
+    # Set frame duration
+    dt_frame_us = 20000
+    t_frames = dt_frame_us * np.arange(int(round(t_length_us / dt_frame_us)))
 
-    for f in files:
+    # Prepare figure and list of frames for the animation
+    fig = plt.figure()
+    imgs = []
 
-        event_filepath = Path(f)
+    event_count = 0
+    for t_frame in tqdm(t_frames):
+        t0_us = t_frame
+        t1_us = t_frame + dt_frame_us
 
-        with tb.open_file(str(event_filepath), mode='r') as file:
-            p_data = file.root.events.p[:100]  # Adjust for chunking
-            df = pd.DataFrame({'p': p_data})
-            print(df)
+        # Select events within the current frame time range
+        m = (t >= t0_us) & (t < t1_us)
+        events_m = dvs_events.events[m]
 
+        event_count += np.sum(m)
 
-        h5f = h5py.File(str(event_filepath), 'r')
-        event_slicer = EventSlicer(h5f)
+        # Convert polarities to -1 and +1
+        events_sign = 2.0 * events_m["p"] - 1
 
-        e = event_slicer.get_events(event_slicer.get_start_time_us(),event_slicer.get_final_time_us())
+        # Ensure x and y coordinates are within the bounds (0, dvs_width) and (0, dvs_height)
+        x = np.clip(events_m["x"], 0, dvs_width - 1)
+        y = np.clip(events_m["y"], 0, dvs_height - 1)
 
-        eventsList = []
-        p = e['p']
-        x = e['x']
-        y = e['y']
-        t = e['t']
-        t = t - t[0]
+        # Create a frame image of the current events
+        frame_img = np.zeros((dvs_height, dvs_width))
+        frame_img[y, x] = events_sign
 
-        plt.figure(figsize=(10, 6))
-        plt.hist(t, bins=50, color='blue', alpha=0.7)
-        plt.title(f"Histogram of timestamps (t) for {f}")
-        plt.xlabel("Time (us)")
-        plt.ylabel("Frequency")
-        plt.grid(True)
-        plt.show()
+        # Add the image to the list of frames
+        img = plt.imshow(frame_img, vmin=-1, vmax=1, animated=True)
+        imgs.append([img])
 
+    # Clean up the DVS events
+    del dvs_events
+    print(f"-I- converted total of {event_count} events and {len(imgs)} images")
+
+    # Create animation
+    ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
+
+    # Save the animation as an MP4 file
+    nv = events_file_name.split("\\")[-1].split(".")[0]
+    output_file = rf'C:\Users\USER\PycharmProjects\nengox\data\{nv}.mp4'
+    ani.save(output_file, writer='ffmpeg')  # Or use 'imagemagick' for .gif
+
+    print(f"Animation saved as {output_file}")
 
 
 def convert():
     import tables as tb
+    import h5py
+    import pandas as pd
+    from tqdm import tqdm
+    from pathlib import Path
+    import nengo_loihi
 
     right_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\right\events.h5'
     left_camera = r'C:\Users\USER\Downloads\MyPHDWork\train_events\thun_00_a\events\left\events.h5'
 
+    files = [right_camera, left_camera]
 
-
-    files = [right_camera,left_camera]
+    # Image dimensions
+    height = 320
+    width = 240
 
     for f in files:
 
         event_filepath = Path(f)
 
+        # Read using tables
         with tb.open_file(str(event_filepath), mode='r') as file:
             p_data = file.root.events.p[:100]  # Adjust for chunking
             df = pd.DataFrame({'p': p_data})
             print(df)
 
-
+        # Read using h5py
         h5f = h5py.File(str(event_filepath), 'r')
         event_slicer = EventSlicer(h5f)
 
-        e = event_slicer.get_events(event_slicer.get_start_time_us(),event_slicer.get_final_time_us())
+        # Get the events from the event slicer
+        e = event_slicer.get_events(event_slicer.get_start_time_us(), event_slicer.get_final_time_us())
 
         eventsList = []
         p = e['p']
         x = e['x']
         y = e['y']
         t = e['t']
-        t = t - t[0]
+        t = t - t[0]  # Adjust time so that it starts from 0
+
+        # Ensure x and y coordinates are within the bounds (0, width) and (0, height)
+        x = np.clip(x, 0, width - 1)
+        y = np.clip(y, 0, height - 1)
+
         eventsList.append((t, p, x, y))
 
+        # Create DVSEvents object
         dvs_events = nengo_loihi.dvs.DVSEvents()
         nbEvents = sum(len(xx) for _, _, xx, _ in eventsList)
         dvs_events.init_events(n_events=nbEvents)
 
+        # Fill the DVSEvents object with synthetic data
         i = 0
         for tt, p, xx, yy in tqdm(eventsList):
             ee = dvs_events.events[i: i + len(xx)]
@@ -102,12 +129,16 @@ def convert():
             ee["y"] = yy
             i += len(xx)
 
+        # Generate file name for events
         side = f.split("\\")[-2]
-        name =f.split("\\")[-4]
+        name = f.split("\\")[-4]
 
         events_file_name = rf'C:\Users\USER\PycharmProjects\nengox\data\{name}_{side}.events'
         dvs_events.write_file(events_file_name)
         print("Wrote %r" % events_file_name)
+
+        # Call to create video from events
+        create_vid(events_file_name, height, width)  # Adjust
 
 def create_syntactic_data(destination_path, x_offset=0):
     import numpy as np
@@ -182,76 +213,19 @@ def create_syntactic_data(destination_path, x_offset=0):
     print(f"Wrote {destination_path}")
 
 
-def create_vid(events_file_name, dvs_height, dvs_width):
-    import matplotlib.pyplot as plt
-    from matplotlib.animation import ArtistAnimation
-    import numpy as np
-    from tqdm import tqdm
-    import nengo_loihi
-
-    # Load the events from the specified file
-    dvs_events = nengo_loihi.dvs.DVSEvents.from_file(events_file_name)
-
-    # Extract event timestamps
-    t = dvs_events.events[:]["t"]
-    t_length_us = t[-1] - t[0]
-
-    # Set frame duration
-    dt_frame_us = 20000
-    t_frames = dt_frame_us * np.arange(int(round(t_length_us / dt_frame_us)))
-
-    # Prepare figure and list of frames for the animation
-    fig = plt.figure()
-    imgs = []
-
-    event_count = 0
-    for t_frame in tqdm(t_frames):
-        t0_us = t_frame
-        t1_us = t_frame + dt_frame_us
-
-        # Select events within the current frame time range
-        m = (t >= t0_us) & (t < t1_us)
-        events_m = dvs_events.events[m]
-
-        event_count += np.sum(m)
-
-        # Convert polarities to -1 and +1
-        events_sign = 2.0 * events_m["p"] - 1
-
-        # Create a frame image of the current events
-        frame_img = np.zeros((dvs_height, dvs_width))
-        frame_img[events_m["y"], events_m["x"]] = events_sign
-
-        # Add the image to the list of frames
-        img = plt.imshow(frame_img, vmin=-1, vmax=1, animated=True)
-        imgs.append([img])
-
-    # Clean up the DVS events
-    del dvs_events
-    print(f"-I- converted total of {event_count} events and {len(imgs)} images")
-
-    # Create animation
-    ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
-
-    # Save the animation as an MP4 file
-    nv = events_file_name.split("\\")[-1].split(".")[0]
-    output_file = rf'C:\Users\USER\PycharmProjects\nengox\data\{nv}.mp4'
-    ani.save(output_file, writer='ffmpeg')  # Or use 'imagemagick' for .gif
-
-    print(f"Animation saved as {output_file}")
 
 if __name__ == '__main__':
 
-    #convert()
+    convert()
 
-    events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\syntactic_left.events'
-    create_syntactic_data(events_file_name,0)
-    create_vid(events_file_name,20,50)
-
-
-    events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\syntactic_right.events'
-    create_syntactic_data(events_file_name,4)
-    create_vid(events_file_name,20,50)
-
-
-
+    # events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\syntactic_left.events'
+    # create_syntactic_data(events_file_name,0)
+    # create_vid(events_file_name,20,50)
+    #
+    #
+    # events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\syntactic_right.events'
+    # create_syntactic_data(events_file_name,20)
+    # create_vid(events_file_name,20,50)
+    #
+    #
+    #
