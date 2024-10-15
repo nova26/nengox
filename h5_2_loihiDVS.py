@@ -1,7 +1,14 @@
 
 import numpy as np
 from utils.eventslicer import EventSlicer
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import tables as tb
+import h5py
+import pandas as pd
+from tqdm import tqdm
+from pathlib import Path
+import nengo_loihi
 
 
 def create_vid(events_file_name, dvs_height, dvs_width):
@@ -27,6 +34,7 @@ def create_vid(events_file_name, dvs_height, dvs_width):
     imgs = []
 
     event_count = 0
+    print("Starting video convert")
     for t_frame in tqdm(t_frames):
         t0_us = t_frame
         t1_us = t_frame + dt_frame_us
@@ -70,18 +78,70 @@ def create_vid(events_file_name, dvs_height, dvs_width):
     print(f"Animation saved as {output_file}")
 
 
-def convert():
-    import tables as tb
-    import h5py
-    import pandas as pd
-    from tqdm import tqdm
-    from pathlib import Path
-    import nengo_loihi
+def process_file(f, width, height):
+    event_filepath = Path(f)
 
+    # Read using tables
+    with tb.open_file(str(event_filepath), mode='r') as file:
+        p_data = file.root.events.p[:100]  # Adjust for chunking
+        df = pd.DataFrame({'p': p_data})
+        print(df)
+
+    # Read using h5py
+    h5f = h5py.File(str(event_filepath), 'r')
+    event_slicer = EventSlicer(h5f)
+
+    # Get the events from the event slicer
+    e = event_slicer.get_events(event_slicer.get_start_time_us(), event_slicer.get_final_time_us())
+
+    eventsList = []
+    p = e['p']
+    x = e['x']
+    y = e['y']
+    t = e['t']
+    t = t - t[0]  # Adjust time so that it starts from 0
+
+    min_y = 50  # Example minimum value for y
+    max_y = 270  # Example maximum value for y
+
+    # Ensure x and y coordinates are within the bounds (0, width) and (0, height)
+    x = np.clip(x, 0, width - 1)
+    y = np.clip(y, min_y, max_y)
+
+    eventsList.append((t, p, x, y))
+
+    # Create DVSEvents object
+    dvs_events = nengo_loihi.dvs.DVSEvents()
+    nbEvents = sum(len(xx) for _, _, xx, _ in eventsList)
+    dvs_events.init_events(n_events=nbEvents)
+
+    print("Fill the DVSEvents object with events data")
+    i = 0
+    for tt, p, xx, yy in tqdm(eventsList):
+        ee = dvs_events.events[i: i + len(xx)]
+        ee["t"] = tt
+        ee["p"] = p
+        ee["x"] = xx
+        ee["y"] = yy
+        i += len(xx)
+
+    # Generate file name for events
+    side = f.split("/")[-2]
+    name = f.split("/")[-4]
+
+    events_file_name = f'/home/avi/projects/nengox/data/{name}_{side}.events'
+    dvs_events.write_file(events_file_name)
+    print("Wrote %r" % events_file_name)
+
+    # Call to create video from events
+    create_vid(events_file_name, height, width)  # Adjust
+
+
+def convert():
     data_root = '/home/avi/projects/data/train_events/interlaken_00_c'
 
     right_camera = f"{data_root}/events/right/events.h5"
-    left_camera = f"{data_root}events/left/events.h5"
+    left_camera = f"{data_root}/events/left/events.h5"
 
     files = [right_camera, left_camera]
 
@@ -89,66 +149,13 @@ def convert():
     height = 320
     width = 240
 
-    for f in files:
+    # Use ThreadPoolExecutor to process each file in parallel
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_file, f, width, height) for f in files]
 
-        event_filepath = Path(f)
-
-        # Read using tables
-        with tb.open_file(str(event_filepath), mode='r') as file:
-            p_data = file.root.events.p[:100]  # Adjust for chunking
-            df = pd.DataFrame({'p': p_data})
-            print(df)
-
-        # Read using h5py
-        h5f = h5py.File(str(event_filepath), 'r')
-        event_slicer = EventSlicer(h5f)
-
-        # Get the events from the event slicer
-        e = event_slicer.get_events(event_slicer.get_start_time_us(), event_slicer.get_final_time_us())
-
-        eventsList = []
-        p = e['p']
-        x = e['x']
-        y = e['y']
-        t = e['t']
-        t = t - t[0]  # Adjust time so that it starts from 0
-
-        min_y = 50  # Example minimum value for y
-        max_y = 270  # Example maximum value for y
-
-        # Ensure x and y coordinates are within the bounds (0, width) and (0, height)
-        x = np.clip(x, 0, width - 1)
-        y = np.clip(y, 0, height - 1)
-        y = np.clip(y, min_y, max_y)
-
-        eventsList.append((t, p, x, y))
-
-        # Create DVSEvents object
-        dvs_events = nengo_loihi.dvs.DVSEvents()
-        nbEvents = sum(len(xx) for _, _, xx, _ in eventsList)
-        dvs_events.init_events(n_events=nbEvents)
-
-        print("Fill the DVSEvents object with events data")
-        i = 0
-        for tt, p, xx, yy in tqdm(eventsList):
-            ee = dvs_events.events[i: i + len(xx)]
-            ee["t"] = tt
-            ee["p"] = p
-            ee["x"] = xx
-            ee["y"] = yy
-            i += len(xx)
-
-        # Generate file name for events
-        side = f.split("/")[-2]
-        name = f.split("/")[-4]
-
-        events_file_name = f'/home/avi/projects/nengox/data/{name}_{side}.events'
-        dvs_events.write_file(events_file_name)
-        print("Wrote %r" % events_file_name)
-
-        # Call to create video from events
-        create_vid(events_file_name, height, width)  # Adjust
-
+        # Progress bar to track completion
+        for future in tqdm(as_completed(futures), total=len(files)):
+            future.result()
 
 
 if __name__ == '__main__':
