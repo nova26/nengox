@@ -62,14 +62,16 @@ def gaussian_transform_matrix(height, width, sigma=1.0):
 def create_input_ensembles(neurons_per_pixel):
 
     positive_ensemble = nengo.Ensemble(
-        neurons_per_pixel, 1,
+        neurons_per_pixel,
+        1,
         neuron_type=nengo.SpikingRectifiedLinear(),
         gain=nengo.dists.Choice([101]),
         bias=nengo.dists.Choice([0])
     )
 
     negative_ensemble = nengo.Ensemble(
-        neurons_per_pixel, 1,
+        neurons_per_pixel,
+        1,
         neuron_type=nengo.SpikingRectifiedLinear(),
         gain=nengo.dists.Choice([101]),
         bias=nengo.dists.Choice([0])
@@ -93,29 +95,3 @@ def create_filter_ensembles(neurons_per_pixel):
     return gabor_ensemble, gaussian_ensemble
 
 
-# Function to visualize the neural activity and save as an MP4 file
-def visualize_and_save(output, shape, sim_t, t_frames, file_name):
-    fig = plt.figure()
-    imgs = []
-    frame_count = 0
-    dt_frame = 0.01
-
-    for t_frame in t_frames:
-        frame_count += 1
-        t0 = t_frame
-        t1 = t_frame + dt_frame
-        m = (sim_t >= t0) & (sim_t < t1)
-
-        frame_img = np.zeros(shape[1:])
-        frame_img += output[m].sum(axis=0)
-
-        if np.abs(frame_img).max() != 0:
-            frame_img = frame_img / np.abs(frame_img).max()
-
-        img = plt.imshow(frame_img, vmin=-1, vmax=1, animated=True)
-        imgs.append([img])
-
-    ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
-    ani.save(file_name, writer='ffmpeg')
-
-    print(f"Total frames {frame_count} for {file_name}")
