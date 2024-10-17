@@ -1,7 +1,5 @@
-
 from urllib.request import urlretrieve
 
-import matplotlib.pyplot as plt
 import nengo
 from nengo.utils.filter_design import cont2discrete
 import numpy as np
@@ -9,38 +7,8 @@ import numpy as np
 import nengo_dl
 import tensorflow as tf
 
-from tensorflow.python.compiler.tensorrt import trt_convert as trt
-
 print(f"Tensorflow {tf.__version__}")
 print(f"Nengo {nengo.__version__}")
-
-seed = 0
-tf.random.set_seed(seed)
-np.random.seed(seed)
-rng = np.random.RandomState(seed)
-
-# load mnist dataset
-(train_images, train_labels), (
-    test_images,
-    test_labels,
-) = tf.keras.datasets.mnist.load_data()
-
-# change inputs to 0--1 range
-train_images = train_images / 255
-test_images = test_images / 255
-
-# reshape the labels to rank 3 (as expected in Nengo)
-train_labels = train_labels[:, None, None]
-test_labels = test_labels[:, None, None]
-
-# flatten images into sequences
-train_images = train_images.reshape((train_images.shape[0], -1, 1))
-test_images = test_images.reshape((test_images.shape[0], -1, 1))
-
-# apply permutation
-perm = rng.permutation(train_images.shape[1])
-train_images = train_images[:, perm]
-test_images = test_images[:, perm]
 
 
 class LMUCell(nengo.Network):
@@ -99,6 +67,35 @@ class LMUCell(nengo.Network):
                 transform=nengo_dl.dists.Glorot(),
                 synapse=None,
             )
+
+
+seed = 0
+tf.random.set_seed(seed)
+np.random.seed(seed)
+rng = np.random.RandomState(seed)
+
+# load mnist dataset
+(train_images, train_labels), (
+    test_images,
+    test_labels,
+) = tf.keras.datasets.mnist.load_data()
+
+# change inputs to 0--1 range
+train_images = train_images / 255
+test_images = test_images / 255
+
+# reshape the labels to rank 3 (as expected in Nengo)
+train_labels = train_labels[:, None, None]
+test_labels = test_labels[:, None, None]
+
+# flatten images into sequences
+train_images = train_images.reshape((train_images.shape[0], -1, 1))
+test_images = test_images.reshape((test_images.shape[0], -1, 1))
+
+# apply permutation
+perm = rng.permutation(train_images.shape[1])
+train_images = train_images[:, perm]
+test_images = test_images[:, perm]
 
 with nengo.Network(seed=seed) as net:
     # remove some unnecessary features to speed up the training
