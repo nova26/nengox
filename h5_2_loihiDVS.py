@@ -190,7 +190,7 @@ def convert(height,width):
 
 if __name__ == '__main__':
 
-    convert(100,200)
+    convert(3,600)
 
     # events_file_name = r'C:\Users\USER\PycharmProjects\nengox\data\syntactic_left.events'
     # create_syntactic_data(events_file_name,0)

@@ -52,14 +52,72 @@ def load_and_create_mp4(neg_file, pos_file, sim_t_file, shape, dt_frame, output_
     print(f"Saved animation to {output_file}")
 
 
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import ArtistAnimation
+
+
+def load_gabor_output_and_create_mp4(gabor_output_file, shape, sim_t_file, dt_frame, output_file):
+    """
+    Load Gabor output from a .npy file and create an MP4 animation.
+
+    Parameters:
+    - gabor_output_file: Path to the .npy file containing the Gabor output.
+    - shape: Tuple of (time steps, height, width) for reshaping the data.
+    - sim_t_file: Path to the .npy file containing the simulation time array.
+    - dt_frame: Time step for each frame in the animation.
+    - output_file: Path to save the resulting MP4 file.
+    """
+    # Load the Gabor output and simulation time data
+    gabor_output = np.load(gabor_output_file)
+    sim_t = np.load(sim_t_file)
+
+    print(f"Loaded Gabor output from {gabor_output_file} with shape {gabor_output.shape}")
+    print(f"Loaded simulation time array from {sim_t_file} with shape {sim_t.shape}")
+
+    # Prepare the animation
+    fig = plt.figure()
+    imgs = []
+    t_frames = dt_frame * np.arange(int(round(sim_t[-1] / dt_frame)))
+    num_neurons = shape[1] * shape[2]  # Number of neurons in the Gabor ensemble
+
+    # Reshape Gabor output to match the (time steps, height, width) shape
+    gabor_output = gabor_output.reshape((len(sim_t), shape[1], shape[2]))
+
+    for t_frame in t_frames:
+        t0 = t_frame
+        t1 = t_frame + dt_frame
+        m = (sim_t >= t0) & (sim_t < t1)
+
+        # Create a frame for this time range
+        frame_img = np.zeros((shape[1], shape[2]))
+        frame_img += gabor_output[m].sum(axis=0)
+
+        # Normalize for visualization
+        if np.abs(frame_img).max() != 0:
+            frame_img = frame_img / (np.abs(frame_img).max() + 1e-6)
+
+        img = plt.imshow(frame_img, vmin=-1, vmax=1, animated=True, cmap='gray')
+        imgs.append([img])
+
+    # Create the animation
+    ani = ArtistAnimation(fig, imgs, interval=50, blit=True)
+    ani.save(output_file, writer='ffmpeg')
+
+    print(f"Saved Gabor output animation to {output_file}")
+
+
 # Parameters
 neg_file = '/home/avi/projects/nengox/data/model/output_spikes_neg.npy'
 pos_file = '/home/avi/projects/nengox/data/model/output_spikes_pos.npy'
 sim_t_file = '/home/avi/projects/nengox/data/model/sim_t.npy'
-shape = (len(np.load(sim_t_file)), 320, 240)  # Adjust based on your simulation's output
+shape = (len(np.load(sim_t_file)), 3, 600)  # Adjust based on your simulation's output
 dt_frame = 0.01
-output_file = '/home/avi/projects/nengox/data/model/loaded_spikes_animation.mp4'
 
-# Call the function with the loaded data
+output_file = '/home/avi/projects/nengox/data/model/loaded_spikes_animation.mp4'
 load_and_create_mp4(neg_file, pos_file, sim_t_file, shape, dt_frame, output_file)
 
+output_file = '/home/avi/projects/nengox/data/model/loaded_spikes_animation_gabor.mp4'
+
+gabor_output_file = '/home/avi/projects/nengox/data/model/gabor_output.npy'
+load_gabor_output_and_create_mp4(gabor_output_file, shape, sim_t_file, dt_frame, output_file)
