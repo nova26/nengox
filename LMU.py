@@ -5,10 +5,15 @@ import matplotlib.pyplot as plt
 import nengo
 from nengo.utils.filter_design import cont2discrete
 import numpy as np
-import tensorflow as tf
 
 import nengo_dl
-# set seed to ensure this example is reproducible
+import tensorflow as tf
+
+from tensorflow.python.compiler.tensorrt import trt_convert as trt
+
+print(f"Tensorflow {tf.__version__}")
+print(f"Nengo {nengo.__version__}")
+
 seed = 0
 tf.random.set_seed(seed)
 np.random.seed(seed)
